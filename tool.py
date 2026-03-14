@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import skew
 from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler, OneHotEncoder, OrdinalEncoder
 st.set_page_config(
     page_title="Automatic Feature Dashboard",
     page_icon="🧠",      # emoji o path a un icono .png
@@ -34,17 +34,26 @@ if uploaded_file:
     # TARGET SELECTION
     target = st.selectbox("Select target column", df.columns)
 
-    #Ordinal Scaling?
+    #Ordinal Scaling
     scale_ordinal = st.checkbox(
         "Scale ordinal features",
         value=False,
         help="Tree-based models (Random Forest, XGBoost) usually do not require scaling for ordinal features."
     )
+
     if target:
 
         features = df.drop(columns=[target])
         numeric_cols = features.select_dtypes(include=np.number).columns
         categorical_cols = features.select_dtypes(include="object").columns
+        #Create ordinals with order matter
+        ordinal_cat_cols = st.multiselect(
+        "Select ordinal categorical variables",
+        categorical_cols,
+        help="Select categorical variables where the order matters (e.g. bad < good < excellent)")
+        if ordinal_cat_cols:
+            st.write("Ordinal categorical variables:", ordinal_cat_cols)
+        nominal_cols = [col for col in categorical_cols if col not in ordinal_cat_cols]
 
         # Detect ordinal vs continuous
         ordinal_cols = [col for col in numeric_cols if features[col].nunique() <= 10]
@@ -55,7 +64,8 @@ if uploaded_file:
         robust_cols = []
         minmax_cols = []
         results = []
-
+        one_hot_encoding_col=[]
+        ordinal_encoding_col=[]
 
 
         for col in numeric_cols:
@@ -100,6 +110,25 @@ if uploaded_file:
                 "Suggested scaler": scaler,
                 "Reason": reason
             })
+        for col in categorical_cols:
+            if col in ordinal_cat_cols:
+                scaler="No scaling"
+                reason="Categorical variable where order matters"
+                ordinal_encoding_col.append(col)
+                var_type="Categorica ordinal"
+            else:
+                scaler="No scaling"
+                reason="Categorical variable where order doesn't matters"
+                one_hot_encoding_col.append(col)
+                var_type="Categorica nominal"
+            results.append({
+                "Variable": col,
+                "Type": var_type,
+                "Outliers %": "Doesn't apply",
+                "Suggested scaler": scaler,
+                "Reason": reason
+            })
+
         if st.button('Visualize variable plots'):
             # VISUALIZATION
             for col in features:
@@ -149,11 +178,15 @@ if uploaded_file:
                     ("minmax", MinMaxScaler(), minmax_cols)
                 )
 
-            if len(categorical_cols) > 0:
-                transformers.append(
-                    ("nominal", OneHotEncoder(), list(categorical_cols))
-                )
 
+            if one_hot_encoding_col:
+                transformers.append(
+                        ("nominal", OneHotEncoder(), list(categorical_cols))
+                    )
+            if ordinal_encoding_col:
+                transformers.append(
+                        ("nominal order", OrdinalEncoder(), list(categorical_cols))
+                    )
             # Create code representation
             pipeline_code = f"""
 from sklearn.compose import ColumnTransformer
